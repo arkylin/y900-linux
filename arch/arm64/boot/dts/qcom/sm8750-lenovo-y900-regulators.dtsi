@@ -10,6 +10,9 @@
 		regulator-boot-on;
 	};
 
+};
+
+&apps_rsc {
 	regulators-0 {
 		compatible = "qcom,pm8550-rpmh-regulators";
 
