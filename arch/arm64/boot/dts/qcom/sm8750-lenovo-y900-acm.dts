@@ -38,17 +38,22 @@
  regulators-b {
   compatible = "qcom,pm8550-rpmh-regulators"; qcom,pmic-id = "b";
   vdd-bob1-supply = <&vph_pwr>;
+  vdd-bob2-supply = <&vph_pwr>;
+  vdd-l17-supply = <&vreg_bob2>;
   vdd-l5-l16-supply = <&vreg_bob1>;
   vdd-l15-supply = <&vreg_s3g>;
   vreg_bob1: bob1 { regulator-name = "vreg_bob1"; regulator-min-microvolt = <3008000>; regulator-max-microvolt = <4000000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
   vreg_l5b: ldo5 { regulator-name = "vreg_l5b_3p1"; regulator-min-microvolt = <3100000>; regulator-max-microvolt = <3148000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
   vreg_l15b: ldo15 { regulator-name = "vreg_l15b_1p8"; regulator-min-microvolt = <1800000>; regulator-max-microvolt = <1800000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
+  vreg_bob2: bob2 { regulator-name = "vreg_bob2"; regulator-min-microvolt = <2704000>; regulator-max-microvolt = <3008000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
+  vreg_l17b_2p5: ldo17 { regulator-name = "vreg_l17b_2p5"; regulator-min-microvolt = <2504000>; regulator-max-microvolt = <2504000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
  };
  regulators-d {
   compatible = "qcom,pm8550ve-rpmh-regulators"; qcom,pmic-id = "d";
-  vdd-l2-supply = <&vreg_s1d>; vdd-s1-supply = <&vph_pwr>;
+  vdd-l1-supply = <&vreg_s7i>; vdd-l2-supply = <&vreg_s1d>; vdd-s1-supply = <&vph_pwr>;
   vreg_s1d: smps1 { regulator-name = "vreg_s1d"; regulator-min-microvolt = <880000>; regulator-max-microvolt = <1100000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
   vreg_l2d: ldo2 { regulator-name = "vreg_l2d_usb"; regulator-min-microvolt = <880000>; regulator-max-microvolt = <912000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
+  vreg_l1d_1p2: ldo1 { regulator-name = "vreg_l1d_1p2"; regulator-min-microvolt = <1200000>; regulator-max-microvolt = <1200000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
  };
  regulators-g {
   compatible = "qcom,pm8550ve-rpmh-regulators"; qcom,pmic-id = "g";
@@ -61,6 +66,12 @@
   vdd-s7-supply = <&vph_pwr>;
   vreg_s7i: smps7 { regulator-name = "vreg_s7i"; regulator-min-microvolt = <1224000>; regulator-max-microvolt = <1340000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
   vreg_l3i: ldo3 { regulator-name = "vreg_l3i_dsi"; regulator-min-microvolt = <880000>; regulator-max-microvolt = <912000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
+ };
+ regulators-j {
+  compatible = "qcom,pm8550vs-rpmh-regulators"; qcom,pmic-id = "j";
+  vdd-l1-supply = <&vreg_s1d>; vdd-l2-supply = <&vreg_s7i>;
+  vdd-s2-supply = <&vph_pwr>; vdd-s3-supply = <&vph_pwr>; vdd-s4-supply = <&vph_pwr>;
+  vreg_l1j_0p91: ldo1 { regulator-name = "vreg_l1j_0p91"; regulator-min-microvolt = <880000>; regulator-max-microvolt = <920000>; regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>; };
  };
 };
 &usb {
@@ -104,6 +115,14 @@
 
 &mdss_dsi0_phy { vdds-supply = <&vreg_l3i>; };
 &mdss_dsi0 { vdda-supply = <&vreg_l3g>; };
+&ufs_mem_phy { vdda-phy-supply = <&vreg_l1j_0p91>; vdda-pll-supply = <&vreg_l3g>; };
+&ufs_mem_hc { vcc-supply = <&vreg_l17b_2p5>; vccq-supply = <&vreg_l1d_1p2>; };
+&ice { status = "disabled"; };
+&crypto { status = "disabled"; };
+&lpass_tlmm { status = "disabled"; };
+&{/soc@0/stm@10002000} { status = "disabled"; };
+&{/soc@0/tn@109ab000} { status = "disabled"; };
+&{/reserved-memory} { /delete-node/ demura_region_0; /delete-node/ demura_region_1; };
 &tlmm { gpio-reserved-ranges = <28 4>, <36 4>, <48 4>, <74 1>, <86 3>, <97 2>, <100 1>, <161 2>; };
 
 / {
