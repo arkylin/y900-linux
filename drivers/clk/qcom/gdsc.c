@@ -450,6 +450,31 @@ static int gdsc_init(struct gdsc *sc)
 		sc->en_few_wait_val << EN_FEW_WAIT_SHIFT |
 		sc->clk_dis_wait_val << CLK_DIS_WAIT_SHIFT;
 
+	/*
+	 * Y900: if the bootloader left this GDSC running in hardware
+	 * control mode, clearing HW_CONTROL here takes the power domain
+	 * down for as long as it takes us to set it again, which stops
+	 * the display scanout it was feeding. Only touch the wait-time
+	 * fields in that case.
+	 */
+	if (sc->flags & HW_CTRL) {
+		u32 hwctl = 0;
+		int hw_on;
+		int rstat;
+
+		rstat = regmap_read(sc->regmap, sc->gdscr, &hwctl);
+		if (!rstat &&
+		    (hwctl & HW_CONTROL_MASK) && gdsc_check_status(sc, GDSC_ON) > 0) {
+			hw_on = 1;
+		} else {
+			hw_on = 0;
+		}
+		if (hw_on) {
+			mask &= ~(HW_CONTROL_MASK | SW_OVERRIDE_MASK);
+			val &= ~(HW_CONTROL_MASK | SW_OVERRIDE_MASK);
+		}
+	}
+
 	ret = regmap_update_bits(sc->regmap, sc->gdscr, mask, val);
 	if (ret)
 		return ret;
