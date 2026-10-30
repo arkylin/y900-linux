@@ -32,6 +32,7 @@ struct novatek {
 	struct drm_dsc_config dsc;
 	struct gpio_desc *reset_gpio;
 	struct regulator_bulk_data *supplies;
+	unsigned int num_supplies;
 	struct backlight_device *backlight;
 };
 
@@ -47,15 +48,22 @@ struct panel_desc {
 	unsigned int num_modes;
 
 	int (*init_sequence)(struct mipi_dsi_multi_context *dsi_ctx);
+	int (*exit_sequence)(struct mipi_dsi_multi_context *dsi_ctx);
+
+	const char *const *supply_names;
+	unsigned int num_supplies;
+	unsigned int post_on_delay_us;
 
 	bool is_dual_dsi;
 	bool has_dcs_backlight;
 };
 
-static const struct regulator_bulk_data novatek_supplies[] = {
-	{ .supply = "vddio" },
-	{ .supply = "vsp" },
-	{ .supply = "vsn" },
+static const char *const csot_pp8807hb1_1_supplies[] = {
+	"vddio", "vsp", "vsn",
+};
+
+static const char *const y900_boe_nt36536e_supplies[] = {
+	"vdd", "vddio", "vci", "tvdd",
 };
 
 static inline struct novatek *to_novatek(struct drm_panel *panel)
@@ -71,6 +79,9 @@ static inline struct mipi_dsi_device *to_primary_dsi(struct novatek *ctx)
 
 static void novatek_reset(struct novatek *ctx)
 {
+	if (!ctx->reset_gpio)
+		return;
+
 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
 	usleep_range(11000, 12000);
 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
@@ -90,19 +101,22 @@ static int novatek_prepare(struct drm_panel *panel)
 	struct device *dev = &dsi->dev;
 	int ret;
 
-	ret = regulator_bulk_enable(ARRAY_SIZE(novatek_supplies),
-				    ctx->supplies);
+	ret = regulator_bulk_enable(ctx->num_supplies, ctx->supplies);
 	if (ret < 0)
 		return ret;
+
+	if (ctx->desc->post_on_delay_us)
+		usleep_range(ctx->desc->post_on_delay_us,
+			     ctx->desc->post_on_delay_us + 1000);
 
 	novatek_reset(ctx);
 
 	ret = ctx->desc->init_sequence(&dsi_ctx);
 	if (ret < 0) {
 		dev_err(dev, "Failed to initialize panel: %d\n", ret);
-		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-		regulator_bulk_disable(ARRAY_SIZE(novatek_supplies),
-				       ctx->supplies);
+		if (ctx->reset_gpio)
+			gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+		regulator_bulk_disable(ctx->num_supplies, ctx->supplies);
 		return ret;
 	}
 
@@ -132,12 +146,16 @@ static int novatek_unprepare(struct drm_panel *panel)
 
 	backlight_disable(ctx->backlight);
 
-	ret = novatek_off(&dsi_ctx);
+	if (ctx->desc->exit_sequence)
+		ret = ctx->desc->exit_sequence(&dsi_ctx);
+	else
+		ret = novatek_off(&dsi_ctx);
 	if (ret < 0)
 		dev_err(dev, "Failed to un-initialize panel: %d\n", ret);
 
-	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-	regulator_bulk_disable(ARRAY_SIZE(novatek_supplies), ctx->supplies);
+	if (ctx->reset_gpio)
+		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+	regulator_bulk_disable(ctx->num_supplies, ctx->supplies);
 
 	return 0;
 }
@@ -274,6 +292,60 @@ static int csot_pp8807hb1_1_init_seq(struct mipi_dsi_multi_context *dsi_ctx)
 	return dsi_ctx->accum_err;
 }
 
+static int y900_boe_nt36536e_init_seq(struct mipi_dsi_multi_context *dsi_ctx)
+{
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xff, 0x23);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xfb, 0x01);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x89, 0xa4);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x8b, 0xc1);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xff, 0x2a);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xfb, 0x01);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbc, 0x77, 0x07);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xff, 0xf0);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xfb, 0x01);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe6, 0x02);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xff, 0x27);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xfb, 0x01);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xd0, 0x33);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xd1, 0x05, 0x00);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xde, 0x43);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xdf, 0x02);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xff, 0xd0);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xfb, 0x01);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x02, 0x42);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x1c, 0xaa);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x1d, 0x0a);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xff, 0x10);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xfb, 0x01);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x3b, 0x03, 0x12, 0x1a, 0x04,
+				     0x04, 0x01, 0x80, 0x36, 0x36);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x60, 0x00);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x90, 0x03, 0x00);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x91, 0xab, 0xa8, 0x00, 0x14,
+				     0xd2, 0x00, 0x00, 0x00, 0x02, 0x52, 0x00,
+				     0x0d, 0x05, 0x7a, 0x02, 0xdd);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x92, 0x10, 0xf0);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xb2, 0x91, 0x80);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xb3, 0x40);
+	mipi_dsi_msleep(dsi_ctx, 16);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x11);
+	mipi_dsi_msleep(dsi_ctx, 105);
+	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x29);
+	mipi_dsi_msleep(dsi_ctx, 20);
+
+	return dsi_ctx->accum_err;
+}
+
+static int y900_boe_nt36536e_exit_seq(struct mipi_dsi_multi_context *dsi_ctx)
+{
+	mipi_dsi_dcs_set_display_off_multi(dsi_ctx);
+	mipi_dsi_msleep(dsi_ctx, 20);
+	mipi_dsi_dcs_enter_sleep_mode_multi(dsi_ctx);
+	mipi_dsi_msleep(dsi_ctx, 120);
+
+	return dsi_ctx->accum_err;
+}
+
 static struct drm_dsc_config csot_pp8807hb1_1_dsc_cfg = {
 	.dsc_version_major = 1,
 	.dsc_version_minor = 2,
@@ -374,21 +446,28 @@ static int novatek_probe(struct mipi_dsi_device *dsi)
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
-	ret = devm_regulator_bulk_get_const(dev, ARRAY_SIZE(novatek_supplies),
-					    novatek_supplies, &ctx->supplies);
-	if (ret < 0)
-		return ret;
-
-	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	ctx->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(ctx->reset_gpio))
 		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
 				     "Failed to get reset-gpios\n");
+	if (!ctx->reset_gpio)
+		dev_info(dev, "No reset GPIO; preserving the bootloader panel reset state\n");
 
 	desc = of_device_get_match_data(dev);
 	if (!desc)
 		return -ENODEV;
 	ctx->desc = desc;
 	ctx->dsc = *desc->dsc_cfg;
+	ctx->num_supplies = desc->num_supplies;
+	ctx->supplies = devm_kcalloc(dev, ctx->num_supplies,
+				     sizeof(*ctx->supplies), GFP_KERNEL);
+	if (!ctx->supplies)
+		return -ENOMEM;
+	for (i = 0; i < ctx->num_supplies; i++)
+		ctx->supplies[i].supply = desc->supply_names[i];
+	ret = devm_regulator_bulk_get(dev, ctx->num_supplies, ctx->supplies);
+	if (ret < 0)
+		return ret;
 
 	if (desc->is_dual_dsi) {
 		num_dsi = 2;
@@ -462,12 +541,74 @@ static const struct panel_desc csot_pp8807hb1_1_desc = {
 	.modes = csot_pp8807hb1_1_modes,
 	.num_modes = ARRAY_SIZE(csot_pp8807hb1_1_modes),
 	.init_sequence = csot_pp8807hb1_1_init_seq,
+	.supply_names = csot_pp8807hb1_1_supplies,
+	.num_supplies = ARRAY_SIZE(csot_pp8807hb1_1_supplies),
+	.is_dual_dsi = true,
+	.has_dcs_backlight = false,
+};
+
+static const struct drm_dsc_config y900_boe_nt36536e_dsc_cfg = {
+	.dsc_version_major = 1,
+	.dsc_version_minor = 2,
+	.slice_height = 20,
+	.slice_width = 960,
+	.slice_count = 2,
+	.bits_per_component = 10,
+	.bits_per_pixel = 8 << 4,
+	.block_pred_enable = true,
+};
+
+static const struct drm_display_mode y900_boe_nt36536e_modes[] = {
+	{
+		.clock = (1920 + 80 + 26 + 64) * 2 *
+			 (2560 + 26 + 2 + 272) * 120 / 1000,
+		.hdisplay = 1920 * 2,
+		.hsync_start = (1920 + 80) * 2,
+		.hsync_end = (1920 + 80 + 26) * 2,
+		.htotal = (1920 + 80 + 26 + 64) * 2,
+		.vdisplay = 2560,
+		.vsync_start = 2560 + 26,
+		.vsync_end = 2560 + 26 + 2,
+		.vtotal = 2560 + 26 + 2 + 272,
+	},
+	{
+		.clock = (1920 + 80 + 26 + 64) * 2 *
+			 (2560 + 2886 + 2 + 272) * 60 / 1000,
+		.hdisplay = 1920 * 2,
+		.hsync_start = (1920 + 80) * 2,
+		.hsync_end = (1920 + 80 + 26) * 2,
+		.htotal = (1920 + 80 + 26 + 64) * 2,
+		.vdisplay = 2560,
+		.vsync_start = 2560 + 2886,
+		.vsync_end = 2560 + 2886 + 2,
+		.vtotal = 2560 + 2886 + 2 + 272,
+	},
+};
+
+static const struct panel_desc y900_boe_nt36536e_desc = {
+	.width_mm = 275,
+	.height_mm = 183,
+	.bpc = 10,
+	.lanes = 3,
+	.format = MIPI_DSI_FMT_RGB101010,
+	.mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_CLOCK_NON_CONTINUOUS |
+		      MIPI_DSI_MODE_NO_EOT_PACKET | MIPI_DSI_MODE_VIDEO_BURST |
+		      MIPI_DSI_MODE_LPM | MIPI_DSI_MODE_DSC_ALL_SLICES_IN_PKT,
+	.dsc_cfg = &y900_boe_nt36536e_dsc_cfg,
+	.modes = y900_boe_nt36536e_modes,
+	.num_modes = ARRAY_SIZE(y900_boe_nt36536e_modes),
+	.init_sequence = y900_boe_nt36536e_init_seq,
+	.exit_sequence = y900_boe_nt36536e_exit_seq,
+	.supply_names = y900_boe_nt36536e_supplies,
+	.num_supplies = ARRAY_SIZE(y900_boe_nt36536e_supplies),
+	.post_on_delay_us = 20000,
 	.is_dual_dsi = true,
 	.has_dcs_backlight = false,
 };
 
 static const struct of_device_id novatek_of_match[] = {
 	{ .compatible = "csot,pp8807hb1-1", .data = &csot_pp8807hb1_1_desc },
+	{ .compatible = "lenovo,y900-boe-nt36536e", .data = &y900_boe_nt36536e_desc },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, novatek_of_match);
