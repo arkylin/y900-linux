@@ -27,6 +27,7 @@
 #include <linux/proc_fs.h>
 #include <linux/memblock.h>
 #include <linux/of_fdt.h>
+#include <linux/libfdt.h>
 #include <linux/efi.h>
 #include <linux/psci.h>
 #include <linux/sched/task.h>
@@ -167,6 +168,12 @@ static void __init smp_build_mpidr_hash(void)
 		pr_warn("Large number of MPIDR hash buckets detected\n");
 }
 
+#ifdef CONFIG_Y900_ACM_DIAG_DTB
+extern const unsigned char y900_acm_dtb_begin[], y900_acm_dtb_end[];
+static unsigned char y900_acm_fdt[1024 * 1024] __aligned(8);
+#include "y900_acm_fdt.h"
+#endif
+
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
 {
 	int size = 0;
@@ -175,6 +182,24 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 
 	if (dt_virt)
 		memblock_reserve(dt_phys, size);
+#ifdef CONFIG_Y900_ACM_DIAG_DTB
+	if (dt_virt) {
+		int result = y900_acm_merge_fdt(dt_virt, y900_acm_dtb_begin,
+					       y900_acm_fdt, sizeof(y900_acm_fdt));
+
+		if (result) {
+			pr_crit("Y900: FDT_MERGE_FAILED=%d; refusing unsafe fallback\n", result);
+			while (true)
+				cpu_relax();
+		}
+		dt_virt = y900_acm_fdt;
+		dt_phys = __pa_symbol(y900_acm_fdt);
+		size = fdt_totalsize(y900_acm_fdt);
+		memblock_reserve(dt_phys, size);
+		pr_info("Y900: FDT_READY bytes=%d firmware_memory_preserved\n", size);
+	}
+#endif
+
 
 	/*
 	 * dt_virt is a fixmap address, hence __pa(dt_virt) can't be used.
@@ -197,7 +222,10 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 	}
 
 	/* Early fixups are done, map the FDT as read-only now */
-	fixmap_remap_fdt(dt_phys, &size, PAGE_KERNEL_RO);
+#ifdef CONFIG_Y900_ACM_DIAG_DTB
+	if (dt_virt != y900_acm_fdt)
+#endif
+		fixmap_remap_fdt(dt_phys, &size, PAGE_KERNEL_RO);
 
 	name = of_flat_dt_get_machine_name();
 	if (!name)

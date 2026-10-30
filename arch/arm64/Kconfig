@@ -2626,3 +2626,7 @@ source "drivers/acpi/Kconfig"
 source "arch/arm64/kvm/Kconfig"
 
 source "kernel/livepatch/Kconfig"
+
+config Y900_ACM_DIAG_DTB
+	bool "Y900 boot-only ACM diagnostic tree"
+	depends on ARCH_QCOM && OF

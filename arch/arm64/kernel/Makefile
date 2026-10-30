@@ -90,3 +90,5 @@ endif
 
 # for cleaning
 subdir- += vdso vdso32
+
+obj-$(CONFIG_Y900_ACM_DIAG_DTB) += y900_acm_dtb.o
