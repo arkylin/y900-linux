@@ -117,6 +117,7 @@
 &mdss_dsi0 { vdda-supply = <&vreg_l3g>; };
 &ufs_mem_phy { vdda-phy-supply = <&vreg_l1j_0p91>; vdda-pll-supply = <&vreg_l3g>; };
 &ufs_mem_hc { msi-parent = <&gic_its 0x60>; };
+&ufs_mem_hc { reset-gpios = <&tlmm 215 GPIO_ACTIVE_LOW>; };
 &ufs_mem_hc { reg = <0x0 0x01d84000 0x0 0x3000>, <0x0 0x01da0000 0x0 0x15000>; reg-names = "std", "mcq"; };
 &ufs_mem_hc { vcc-supply = <&vreg_l17b_2p5>; vcc-max-microamp = <1300000>; vccq-supply = <&vreg_l1d_1p2>; vccq-max-microamp = <1200000>; };
 &ice { status = "disabled"; };
