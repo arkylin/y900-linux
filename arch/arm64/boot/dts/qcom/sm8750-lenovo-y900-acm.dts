@@ -106,6 +106,12 @@
 
 / {
  reserved-memory {
+  /* Cont splash region set up by the bootloader */
+  cont_splash_mem: framebuffer@fc800000 {
+   reg = <0x0 0xfc800000 0x0 0x2b00000>;
+   no-map;
+  };
+
   ramoops_mem: ramoops-region@c2000000 {
    reg = <0x0 0xc2000000 0x0 0xc0000>;
    no-map;
