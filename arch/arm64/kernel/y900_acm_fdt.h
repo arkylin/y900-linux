@@ -85,8 +85,11 @@ static int __init y900_acm_merge_fdt(const void *firmware, const void *board,
   for (index = 0; index < (int)(sizeof(chosen_properties) /
                               sizeof(chosen_properties[0])); index++) {
    target_chosen = fdt_path_offset(target, "/chosen");
-   if (target_chosen < 0)
-    return target_chosen;
+   if (target_chosen < 0) {
+    target_chosen = fdt_add_subnode(target, 0, "chosen");
+    if (target_chosen < 0)
+     return target_chosen;
+   }
    result = y900_acm_copy_property(firmware, firmware_chosen, target,
                                    target_chosen, chosen_properties[index]);
    if (result)
