@@ -167,6 +167,12 @@ static int __init __reserved_mem_reserve_reg(unsigned long node,
 	base = b;
 	size = s;
 
+	/* Y900: zero-sized placeholder -- nothing to reserve, nothing failed. */
+	if (!size) {
+		pr_debug("Reserved memory: node '%s' is empty, skipping\n", uname);
+		return 0;
+	}
+
 	if (size && early_init_dt_reserve_memory(base, size, nomap) == 0) {
 		fdt_fixup_reserved_mem_node(node, base, size);
 		pr_debug("Reserved memory: reserved region for node '%s': base %pa, size %lu MiB\n",
