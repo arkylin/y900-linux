@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <linux/acpi.h>
+#include <linux/y900_trace.h>
 #include <linux/array_size.h>
 #include <linux/bitmap.h>
 #include <linux/cleanup.h>
@@ -1176,6 +1177,17 @@ int gpiochip_get_ngpios(struct gpio_chip *gc, struct device *dev)
 }
 EXPORT_SYMBOL_GPL(gpiochip_get_ngpios);
 
+/* Y900 M158: last GPIO registration stage, read by the heartbeat. */
+int y900_step = -1;
+
+static void y900_trace(struct gpio_chip *gc, int step, const char *what)
+{
+	if (gc->ngpio <= 128)
+		return;
+	y900_step = step;
+	y900_pr("Y900STEP %d %s %s\n", step, gc->label ? gc->label : "?", what);
+}
+
 int gpiochip_add_data_with_key(struct gpio_chip *gc, void *data,
 			       struct lock_class_key *lock_key,
 			       struct lock_class_key *request_key)
@@ -1290,8 +1302,12 @@ int gpiochip_add_data_with_key(struct gpio_chip *gc, void *data,
 		}
 	}
 
+	y900_trace(gc, 100, "enter");
+
 	if (gc->names)
 		gpiochip_set_desc_names(gc);
+
+	y900_trace(gc, 101, "names_done");
 
 	ret = gpiochip_set_names(gc);
 	if (ret)
@@ -1300,6 +1316,10 @@ int gpiochip_add_data_with_key(struct gpio_chip *gc, void *data,
 	ret = gpiochip_init_valid_mask(gc);
 	if (ret)
 		goto err_remove_from_list;
+
+	y900_trace(gc, 102, "valid_mask_done");
+
+	y900_trace(gc, 103, "walk_start");
 
 	for (desc_index = 0; desc_index < gc->ngpio; desc_index++) {
 		struct gpio_desc *desc = &gdev->descs[desc_index];
@@ -1313,6 +1333,10 @@ int gpiochip_add_data_with_key(struct gpio_chip *gc, void *data,
 		 * and return -EINVAL. Also: there's no need to take the SRCU
 		 * lock here.
 		 */
+		if (gc->ngpio > 128 && (desc_index & 7) == 0) {
+			y900_step = 104;
+			y900_pr("Y900STEP 104 walk %u/%u\n", desc_index, gc->ngpio);
+		}
 		if (gc->get_direction && gpiochip_line_is_valid(gc, desc_index))
 			assign_bit(GPIOD_FLAG_IS_OUT, &desc->flags,
 				   !gc->get_direction(gc, desc_index));
@@ -1325,31 +1349,47 @@ int gpiochip_add_data_with_key(struct gpio_chip *gc, void *data,
 	if (ret)
 		goto err_free_valid_mask;
 
+	y900_trace(gc, 105, "walk_done");
+
 	ret = gpiochip_add_pin_ranges(gc);
 	if (ret)
 		goto err_remove_of_chip;
 
+	y900_trace(gc, 106, "pin_ranges_done");
+
 	acpi_gpiochip_add(gc);
+
+	y900_trace(gc, 107, "acpi_done");
 
 	ret = gpiochip_hog_lines(gc);
 	if (ret)
 		goto err_free_hogs;
 
+	y900_trace(gc, 108, "hogs_done");
+
 	ret = gpiochip_irqchip_init_valid_mask(gc);
 	if (ret)
 		goto err_free_hogs;
+
+	y900_trace(gc, 109, "irq_valid_mask_done");
 
 	ret = gpiochip_irqchip_init_hw(gc);
 	if (ret)
 		goto err_remove_irqchip_mask;
 
+	y900_trace(gc, 110, "irq_hw_init_done");
+
 	ret = gpiochip_add_irqchip(gc, lock_key, request_key);
 	if (ret)
 		goto err_remove_irqchip_mask;
 
+	y900_trace(gc, 111, "add_irqchip_done");
+
 	ret = gpiochip_setup_shared(gc);
 	if (ret)
 		goto err_remove_irqchip;
+
+	y900_trace(gc, 112, "shared_done");
 
 	/*
 	 * By first adding the chardev, and then adding the device,
@@ -1365,6 +1405,7 @@ int gpiochip_add_data_with_key(struct gpio_chip *gc, void *data,
 			goto err_teardown_shared;
 	}
 
+	y900_trace(gc, 113, "done");
 	return 0;
 
 err_teardown_shared:

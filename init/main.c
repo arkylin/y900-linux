@@ -113,6 +113,20 @@
 #include <asm/io.h>
 #include <asm/setup.h>
 #include <asm/sections.h>
+#include <linux/y900_trace.h>
+
+int y900_tracing;
+static int __init y900_trace_setup(char *str)
+{
+	if (kstrtouint(str, 0, &y900_tracing))
+		y900_tracing = 0;
+	return 0;
+}
+early_param("y900.trace", y900_trace_setup);
+#include "y900_beacon.h"
+
+static unsigned int y900_dev_index __initdata;
+static unsigned int y900_dev_index_late __initdata;
 #include <asm/cacheflush.h>
 
 #define CREATE_TRACE_POINTS
@@ -1413,6 +1427,8 @@ static void __init do_initcall_level(int level, char *command_line)
 {
 	initcall_entry_t *fn;
 
+	y900_beacon(level);
+
 	parse_args(initcall_level_names[level],
 		   command_line, __start___param,
 		   __stop___param - __start___param,
@@ -1420,8 +1436,18 @@ static void __init do_initcall_level(int level, char *command_line)
 		   NULL, ignore_unknown_bootoption);
 
 	do_trace_initcall_level(initcall_level_names[level]);
-	for (fn = initcall_levels[level]; fn < initcall_levels[level+1]; fn++)
+	for (fn = initcall_levels[level]; fn < initcall_levels[level+1]; fn++) {
+		if (level == 6) {
+			y900_beacon_count(++y900_dev_index);
+		} else if (level == 7) {
+			void *entry_ = (void *)initcall_from_entry(fn);
+		
+			y900_dev_index_late++;
+			y900_beacon_late(y900_dev_index_late);
+			y900_pr("Y900LATE %u %pS\n", y900_dev_index_late, entry_);
+		}
 		do_one_initcall(initcall_from_entry(fn));
+	}
 }
 
 static void __init do_initcalls(void)
@@ -1673,6 +1699,7 @@ static noinline void __init kernel_init_freeable(void)
 	page_alloc_init_late();
 
 	do_basic_setup();
+	y900_beacon(9);
 
 	kunit_run_all_tests();
 

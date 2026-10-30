@@ -17,6 +17,7 @@
  */
 
 #include <linux/debugfs.h>
+#include <linux/y900_trace.h>
 #include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/dma-map-ops.h>
@@ -55,6 +56,9 @@
 static DEFINE_MUTEX(deferred_probe_mutex);
 static LIST_HEAD(deferred_probe_pending_list);
 static LIST_HEAD(deferred_probe_active_list);
+static unsigned int y900_defer_idx;
+static unsigned int y900_defer_total;
+static unsigned int y900_probe_idx;
 static atomic_t deferred_trigger_count = ATOMIC_INIT(0);
 static bool initcalls_done;
 
@@ -120,12 +124,16 @@ static void deferred_probe_work_func(struct work_struct *work)
 		 */
 		device_pm_move_to_tail(dev);
 
+		y900_pr("Y900DEFER-PROBE %u/%u %s\n", ++y900_defer_idx,
+			y900_defer_total, dev_name(dev));
 		dev_dbg(dev, "Retrying from deferred list\n");
 		bus_probe_device(dev);
 		mutex_lock(&deferred_probe_mutex);
 
 		put_device(dev);
 	}
+	y900_pr("Y900DEFER-WORK-DONE %u/%u\n",
+		y900_defer_idx, y900_defer_total);
 	mutex_unlock(&deferred_probe_mutex);
 }
 static DECLARE_WORK(deferred_probe_work, deferred_probe_work_func);
@@ -342,6 +350,25 @@ static int deferred_probe_initcall(void)
 	debugfs_create_file("devices_deferred", 0444, NULL, NULL,
 			    &deferred_devs_fops);
 
+	{
+		struct device_private *y900p;
+		unsigned int y900n = 0;
+		unsigned int y900shown = 0;
+
+		mutex_lock(&deferred_probe_mutex);
+		list_for_each_entry(y900p, &deferred_probe_pending_list, deferred_probe) {
+			y900n++;
+			if (!y900p->deferred_probe_reason)
+				continue;
+			y900_pr("Y900DEFER-PENDING %u/%u %s reason=%s\n", y900n,
+				y900_defer_total, dev_name(y900p->device),
+				y900p->deferred_probe_reason);
+			y900shown++;
+		}
+		y900_defer_total = y900n;
+		mutex_unlock(&deferred_probe_mutex);
+		y900_pr("Y900DEFER-TOTAL %u (reasons shown: %u)\n", y900n, y900shown);
+	}
 	driver_deferred_probe_enable = true;
 	driver_deferred_probe_trigger();
 	/* Sort as many dependencies as possible before exiting initcalls */
@@ -654,6 +681,9 @@ static int really_probe(struct device *dev, const struct device_driver *drv)
 	bool test_remove = IS_ENABLED(CONFIG_DEBUG_TEST_DRIVER_REMOVE) &&
 			   !drv->suppress_bind_attrs;
 	int ret, link_ret;
+
+	y900_pr("Y900PROBE %u %s <- %s\n", ++y900_probe_idx,
+		dev_name(dev), drv->name);
 
 	if (defer_all_probes) {
 		/*
