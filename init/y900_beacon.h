@@ -15,6 +15,11 @@
  * The framebuffer mapping is cached in a static pointer. M137 remapped 39 MiB
  * on every single initcall, which inflated kernel time roughly 100x (simplefb
  * at 14.97 s instead of 0.089 s). Mapping once removes that distortion.
+ *
+ * The original counter repainted ten 160x160 squares for every device
+ * initcall, costing roughly 250 million writel() calls and stretching boot to
+ * 75 s.  Keep the readout, but use compact 32x32 squares and repaint only the
+ * bits that changed.
  */
 #ifndef _Y900_BEACON_H
 #define _Y900_BEACON_H
@@ -27,11 +32,11 @@
 #define Y900_FB_WIDTH  3840U
 #define Y900_FB_HEIGHT 2560U
 #define Y900_FB_BYTES  (Y900_FB_STRIDE * Y900_FB_HEIGHT)
-#define Y900_BAND_H    48U               /* level stripe height */
+#define Y900_BAND_H    16U               /* level stripe height */
 
 #define Y900_BITS      10U               /* 10 bits -> 0..1023 */
-#define Y900_SQ        160U              /* square side */
-#define Y900_SQ_GAP    32U
+#define Y900_SQ        32U               /* square side */
+#define Y900_SQ_GAP    16U
 #define Y900_SQ_ROW_A  400U              /* device-level counter row */
 #define Y900_SQ_ROW_B  620U              /* late-level counter row  */
 
@@ -39,6 +44,8 @@
 #define Y900_OFF       0x00202020        /* dark   = bit clear */
 
 static void __iomem *y900_fb_map __initdata;
+static unsigned int y900_last_count __initdata = ~0U;
+static unsigned int y900_last_late __initdata = ~0U;
 
 static const u32 y900_beacon_colors[] = {
 	0x00ff0000, /* 0 red     */
@@ -91,29 +98,38 @@ static void __init y900_beacon(unsigned int index)
 }
 
 /* Binary index readout for a given row (row_base selects device or late). */
-static void __init y900_beacon_row(unsigned int row_base, unsigned int value)
+static void __init y900_beacon_row(unsigned int row_base, unsigned int value,
+				   unsigned int *last)
 {
 	void __iomem *fb = y900_fb();
+	unsigned int changed = value ^ *last;
 	unsigned int bit;
+
+	if (*last == ~0U)
+		changed = (1U << Y900_BITS) - 1;
 
 	for (bit = 0; bit < Y900_BITS; bit++) {
 		unsigned int slot = Y900_BITS - 1 - bit;   /* MSB leftmost */
 		unsigned int x = Y900_SQ_GAP + slot * (Y900_SQ + Y900_SQ_GAP);
 		u32 color = (value & (1U << bit)) ? Y900_ON : Y900_OFF;
 
+		if (!(changed & (1U << bit)))
+			continue;
 		y900_fill(fb, x, row_base, Y900_SQ, Y900_SQ, color);
 	}
-	wmb();
+	*last = value;
+	if (changed)
+		wmb();
 }
 
 static void __init y900_beacon_count(unsigned int value)
 {
-	y900_beacon_row(Y900_SQ_ROW_A, value);
+	y900_beacon_row(Y900_SQ_ROW_A, value, &y900_last_count);
 }
 
 static void __init y900_beacon_late(unsigned int value)
 {
-	y900_beacon_row(Y900_SQ_ROW_B, value);
+	y900_beacon_row(Y900_SQ_ROW_B, value, &y900_last_late);
 }
 
 #endif /* _Y900_BEACON_H */
