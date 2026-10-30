@@ -78,16 +78,6 @@ static const struct pll_vco taycan_elu_vco[] = {
 	{ 249600000, 2500000000, 0 },
 };
 
-static struct alpha_pll_config disp_cc_pll0_config = {
-	.l = 0xd,
-	.alpha = 0x6492,
-	.config_ctl_val = 0x19660387,
-	.config_ctl_hi_val = 0x098060a0,
-	.config_ctl_hi1_val = 0xb416cb20,
-	.user_ctl_val = 0x00000000,
-	.user_ctl_hi_val = 0x00000002,
-};
-
 static struct clk_alpha_pll disp_cc_pll0 = {
 	.offset = 0x0,
 	.vco_table = taycan_elu_vco,
@@ -103,16 +93,6 @@ static struct clk_alpha_pll disp_cc_pll0 = {
 			.ops = &clk_alpha_pll_taycan_elu_ops,
 		},
 	},
-};
-
-static struct alpha_pll_config disp_cc_pll1_config = {
-	.l = 0x1f,
-	.alpha = 0x4000,
-	.config_ctl_val = 0x19660387,
-	.config_ctl_hi_val = 0x098060a0,
-	.config_ctl_hi1_val = 0xb416cb20,
-	.user_ctl_val = 0x00000000,
-	.user_ctl_hi_val = 0x00000002,
 };
 
 static struct clk_alpha_pll disp_cc_pll1 = {
@@ -1902,48 +1882,7 @@ MODULE_DEVICE_TABLE(of, disp_cc_sm8750_match_table);
 
 static int disp_cc_sm8750_probe(struct platform_device *pdev)
 {
-	struct regmap *regmap;
-	int ret;
-
-	ret = devm_pm_runtime_enable(&pdev->dev);
-	if (ret)
-		return ret;
-
-	ret = pm_runtime_resume_and_get(&pdev->dev);
-	if (ret)
-		return ret;
-
-	regmap = qcom_cc_map(pdev, &disp_cc_sm8750_desc);
-	if (IS_ERR(regmap)) {
-		ret = PTR_ERR(regmap);
-		goto err_put_rpm;
-	}
-
-	clk_taycan_elu_pll_configure(&disp_cc_pll0, regmap, &disp_cc_pll0_config);
-	clk_taycan_elu_pll_configure(&disp_cc_pll1, regmap, &disp_cc_pll1_config);
-	clk_pongo_elu_pll_configure(&disp_cc_pll2, regmap, &disp_cc_pll2_config);
-
-	/* Enable clock gating for MDP clocks */
-	regmap_update_bits(regmap, DISP_CC_MISC_CMD, 0x10, 0x10);
-
-	/* Keep some clocks always-on */
-	qcom_branch_set_clk_en(regmap, 0xe07c); /* DISP_CC_SLEEP_CLK */
-	qcom_branch_set_clk_en(regmap, 0xe05c); /* DISP_CC_XO_CLK */
-	qcom_branch_set_clk_en(regmap, 0xc00c); /* DISP_CC_MDSS_RSCC_AHB_CLK */
-	qcom_branch_set_clk_en(regmap, 0xc008); /* DISP_CC_MDSS_RSCC_VSYNC_CLK */
-
-	ret = qcom_cc_really_probe(&pdev->dev, &disp_cc_sm8750_desc, regmap);
-	if (ret)
-		goto err_put_rpm;
-
-	pm_runtime_put(&pdev->dev);
-
-	return 0;
-
-err_put_rpm:
-	pm_runtime_put_sync(&pdev->dev);
-
-	return ret;
+	return qcom_cc_probe(pdev, &disp_cc_sm8750_desc);
 }
 
 static struct platform_driver disp_cc_sm8750_driver = {
