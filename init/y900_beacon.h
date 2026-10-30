@@ -37,8 +37,10 @@
 #define Y900_BITS      10U               /* 10 bits -> 0..1023 */
 #define Y900_SQ        32U               /* square side */
 #define Y900_SQ_GAP    16U
-#define Y900_SQ_ROW_A  400U              /* device-level counter row */
-#define Y900_SQ_ROW_B  620U              /* late-level counter row  */
+#define Y900_SQ_TOP    200U              /* below the level stripes */
+#define Y900_SQ_RIGHT  16U               /* right screen margin */
+#define Y900_SQ_COL_A  (Y900_FB_WIDTH - Y900_SQ - Y900_SQ_RIGHT)
+#define Y900_SQ_COL_B  (Y900_SQ_COL_A - Y900_SQ - Y900_SQ_GAP)
 
 #define Y900_ON        0x00ffffff        /* white  = bit set */
 #define Y900_OFF       0x00202020        /* dark   = bit clear */
@@ -97,8 +99,8 @@ static void __init y900_beacon(unsigned int index)
 	wmb();
 }
 
-/* Binary index readout for a given row (row_base selects device or late). */
-static void __init y900_beacon_row(unsigned int row_base, unsigned int value,
+/* Binary index readout in a right-edge column (device or late). */
+static void __init y900_beacon_row(unsigned int col_base, unsigned int value,
 				   unsigned int *last)
 {
 	void __iomem *fb = y900_fb();
@@ -109,13 +111,13 @@ static void __init y900_beacon_row(unsigned int row_base, unsigned int value,
 		changed = (1U << Y900_BITS) - 1;
 
 	for (bit = 0; bit < Y900_BITS; bit++) {
-		unsigned int slot = Y900_BITS - 1 - bit;   /* MSB leftmost */
-		unsigned int x = Y900_SQ_GAP + slot * (Y900_SQ + Y900_SQ_GAP);
+		unsigned int slot = Y900_BITS - 1 - bit;   /* MSB topmost */
+		unsigned int y = Y900_SQ_TOP + slot * (Y900_SQ + Y900_SQ_GAP);
 		u32 color = (value & (1U << bit)) ? Y900_ON : Y900_OFF;
 
 		if (!(changed & (1U << bit)))
 			continue;
-		y900_fill(fb, x, row_base, Y900_SQ, Y900_SQ, color);
+		y900_fill(fb, col_base, y, Y900_SQ, Y900_SQ, color);
 	}
 	*last = value;
 	if (changed)
@@ -124,12 +126,12 @@ static void __init y900_beacon_row(unsigned int row_base, unsigned int value,
 
 static void __init y900_beacon_count(unsigned int value)
 {
-	y900_beacon_row(Y900_SQ_ROW_A, value, &y900_last_count);
+	y900_beacon_row(Y900_SQ_COL_A, value, &y900_last_count);
 }
 
 static void __init y900_beacon_late(unsigned int value)
 {
-	y900_beacon_row(Y900_SQ_ROW_B, value, &y900_last_late);
+	y900_beacon_row(Y900_SQ_COL_B, value, &y900_last_late);
 }
 
 #endif /* _Y900_BEACON_H */
